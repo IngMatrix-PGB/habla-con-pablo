@@ -1,13 +1,14 @@
 ---
 import { AGENT_NAME } from '../lib/agent.js';
 import { profile } from '../lib/profile.js';
-import { env, envInt } from '../lib/env.js';
 
-export const prerender = false;
-
-const turnstileSiteKey = env('TURNSTILE_SITE_KEY');
-const maxCallSeconds = envInt('MAX_CALL_SECONDS', 300);
-const dailyCalls = envInt('DAILY_CALLS_PER_IP', 1);
+// Configuración pública, se fija al construir el sitio (ver .env.example).
+const pub = import.meta.env;
+const voiceApiUrl = pub.PUBLIC_VOICE_API_URL || 'http://localhost:8787/api/voice';
+const turnstileSiteKey = pub.PUBLIC_TURNSTILE_SITE_KEY || '';
+const maxCallSeconds = Number(pub.PUBLIC_MAX_CALL_SECONDS) || 300;
+const dailyCalls = Number(pub.PUBLIC_DAILY_CALLS_PER_IP) || 1;
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 const handle = profile.contact.github.split('/').pop();
 ---
@@ -20,13 +21,13 @@ const handle = profile.contact.github.split('/').pop();
     <meta name="theme-color" content="#030604" />
     <title>Habla con Pablo</title>
     <meta name="description" content={`Pregúntale por voz a ${AGENT_NAME} sobre la carrera de ${profile.name}.`} />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
     {turnstileSiteKey && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
   </head>
-  <body>
+  <body data-voice-api={voiceApiUrl} data-max-call-seconds={maxCallSeconds}>
     <canvas id="rain" aria-hidden="true"></canvas>
     <div class="scanlines" aria-hidden="true"></div>
 

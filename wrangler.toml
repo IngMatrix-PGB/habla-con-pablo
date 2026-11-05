@@ -1,0 +1,19 @@
+# Cloudflare Worker que emite los tokens de voz. Ver README → "Deploy del Worker".
+name = "habla-con-pablo-voice"
+main = "worker/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://ingmatrix-pgb.github.io,http://localhost:4321"
+REALTIME_MODEL = "gpt-realtime"
+REALTIME_VOICE = "marin"
+DAILY_CALLS_PER_IP = "1"
+MAX_CALL_SECONDS = "300"
+
+# Crear con: npx wrangler kv namespace create RATE_LIMIT  → pegar aquí el id que devuelve.
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "REEMPLAZAR_CON_EL_ID_DE_KV"
+
+[observability]
+enabled = true

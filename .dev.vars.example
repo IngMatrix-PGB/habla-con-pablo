@@ -1,0 +1,3 @@
+# Secretos del Worker para desarrollo local (wrangler dev). Copiar a .dev.vars.
+OPENAI_API_KEY=
+TURNSTILE_SECRET_KEY=

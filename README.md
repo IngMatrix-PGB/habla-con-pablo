@@ -1,52 +1,63 @@
 # Habla con Pablo
 
-Agente de voz en tiempo real que responde preguntas sobre la carrera de Pablo Galeana Bailey, en español o inglés.
+Agente de voz en tiempo real (**Matrix**) que responde preguntas sobre la carrera de Pablo Galeana Bailey, en español o inglés.
 
-## Cómo funciona
+## Arquitectura
 
 ```
-Navegador ──POST /api/voice──▶ Servidor Astro (Node)
-   │                             ├─ valida Turnstile (opcional)
-   │                             ├─ límite diario por IP
-   │                             └─ POST /v1/realtime/client_secrets  (llave real, solo servidor)
-   │◀──── token temporal (60 s) ─┘
-   │
-   └──WebRTC (SDP a /v1/realtime/calls con el token)──▶ OpenAI Realtime
-        ├─ audio de ida y vuelta
-        └─ canal de datos "oai-events": transcripción, llamadas a herramientas, uso de tokens
+GitHub Pages (sitio estático)                 Cloudflare Worker (worker/)
+  index.html + JS  ──POST /api/voice──▶  ├─ CORS: solo orígenes permitidos
+        │                                ├─ Turnstile (opcional)
+        │                                ├─ límite diario por IP en KV
+        │                                └─ POST /v1/realtime/client_secrets  (llave = secreto del Worker)
+        │◀────────── token temporal (60 s) ─┘
+        │
+        └──WebRTC (SDP a /v1/realtime/calls con el token)──▶ OpenAI Realtime
+             ├─ audio de ida y vuelta
+             └─ canal "oai-events": transcripción, herramientas, uso de tokens
 ```
 
-- **Conocimiento**: `src/lib/profile.js` es la única fuente. El agente consulta herramientas (`get_experience`, `get_skills`, `get_certifications`, `get_projects`, `get_contact`) en vez de recitar un prompt gigante; las reglas le prohíben inventar.
-- **Herramientas**: se ejecutan en el navegador porque solo leen datos públicos del perfil.
-- **Métricas en vivo**: tiempo de conexión, latencia por turno (fin de tu voz → inicio del audio de respuesta) y su p50, interrupciones, herramientas usadas y tokens.
-- **Control de costo**: 1 llamada por IP al día, máximo 5 min, `max_output_tokens` por respuesta, token que expira en 60 s.
+- **Conocimiento**: `src/lib/profile.js` es la única fuente. El agente consulta herramientas (`get_overview`, `get_experience`, `get_skills`, `get_certifications`, `get_projects`, `get_contact`) y tiene prohibido inventar.
+- **Idioma**: cada herramienta recibe `lang` (el idioma del usuario) y la respuesta que sigue se fuerza a ese idioma. Sin esto, los datos en español hacían que contestara en español a preguntas en inglés.
+- **Métricas en vivo**: conexión, latencia por turno y p50, interrupciones, herramientas y tokens.
+- **Control de costo**: 1 llamada por IP al día, máx 5 min, `max_output_tokens` por respuesta, token de 60 s.
 
-## Correr local
+## Desarrollo local
 
 ```bash
 npm install
-cp .env.example .env   # pon tu OPENAI_API_KEY
-npm run dev            # http://localhost:4321
+cp .env.example .env              # config pública del sitio
+cp .dev.vars.example .dev.vars    # pon tu OPENAI_API_KEY (secreto del Worker)
+npm run dev:worker                # Worker en http://localhost:8787
+npm run dev                       # sitio en http://localhost:4321/habla-con-pablo/
+npm test
 ```
+
+## Deploy del Worker (Cloudflare)
 
 ```bash
-npm test               # límite diario, herramientas, estadísticas
-npm run build && npm start
+npx wrangler login
+npx wrangler kv namespace create RATE_LIMIT     # copia el id a wrangler.toml
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put TURNSTILE_SECRET_KEY    # opcional
+npm run deploy:worker                           # te da https://habla-con-pablo-voice.<tu-subdominio>.workers.dev
 ```
 
-## Variables
+Ajusta `ALLOWED_ORIGINS` en `wrangler.toml` si usas dominio propio.
 
-| Variable | Default | Para qué |
-|---|---|---|
-| `OPENAI_API_KEY` | — | Llave del servidor. Sin ella `/api/voice` responde 503. |
-| `REALTIME_MODEL` | `gpt-realtime` | Modelo de voz. |
-| `REALTIME_VOICE` | `marin` | Voz del agente. |
-| `DAILY_CALLS_PER_IP` | `1` | Cupo diario por IP. |
-| `MAX_CALL_SECONDS` | `300` | Duración máxima de la llamada. |
-| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | — | Anti-bots de Cloudflare. Vacías = desactivado. |
+## Deploy del sitio (GitHub Pages)
 
-## Límites conocidos (siguientes pasos)
+1. Sube el repo a GitHub y en **Settings → Pages** elige **GitHub Actions** como fuente.
+2. En **Settings → Secrets and variables → Actions → Variables** crea:
+   - `PUBLIC_VOICE_API_URL` = `https://habla-con-pablo-voice.<tu-subdominio>.workers.dev/api/voice`
+   - `PUBLIC_TURNSTILE_SITE_KEY` (opcional), `PUBLIC_DAILY_CALLS_PER_IP`, `PUBLIC_MAX_CALL_SECONDS`
+   - Con dominio propio: `SITE_URL=https://tu-dominio` y `SITE_BASE=/`
+3. Cada push a `main` corre pruebas, construye y publica (`.github/workflows/pages.yml`).
 
-- El límite diario vive en memoria: se pierde al reiniciar y no se comparte entre instancias. En producción, cambiarlo por DynamoDB con TTL o Cloudflare KV (`src/lib/rate-limit.js` ya aísla la interfaz).
-- El corte a los 5 min lo hace el navegador. Para forzarlo del lado servidor, usar el canal lateral (sideband) de Realtime con el `call_id` y colgar desde el backend.
-- Despliegue y IaC (Terraform), panel de costo por llamada medido y el laboratorio de pronunciación ayuuk todavía no están.
+Todo lo que empieza con `PUBLIC_` queda dentro del HTML: nunca pongas secretos ahí.
+
+## Límites conocidos
+
+- KV es eventualmente consistente: dos llamadas casi simultáneas de la misma IP pueden pasar el límite. Para exactitud, usar un Durable Object.
+- El corte a los 5 min lo hace el navegador. Para forzarlo del lado servidor, usar el canal lateral (sideband) de Realtime con el `call_id`.
+- Pendiente: panel de costo por llamada medido y laboratorio de pronunciación ayuuk.

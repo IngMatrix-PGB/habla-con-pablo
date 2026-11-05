@@ -4,17 +4,20 @@
   "description": "Agente de voz que responde preguntas sobre la carrera de Pablo Galeana Bailey",
   "scripts": {
     "dev": "astro dev",
+    "dev:worker": "wrangler dev --port 8787",
     "build": "astro build",
     "preview": "astro preview",
-    "start": "node ./dist/server/entry.mjs",
+    "deploy:worker": "wrangler deploy",
     "test": "node --test test/*.test.js"
   },
   "author": "",
   "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
-    "@astrojs/node": "^11.1.10",
     "astro": "^7.4.6"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "wrangler": "^4.158.0"
+  }
 }

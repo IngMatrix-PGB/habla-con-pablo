@@ -1,5 +1,5 @@
 // Cliente de voz: WebRTC con OpenAI Realtime, transcripción, herramientas y métricas.
-import { runTool, AGENT_NAME } from './agent.js';
+import { runTool, followUpInstructions, AGENT_NAME } from './agent.js';
 import { median } from './stats.js';
 
 const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
@@ -235,7 +235,7 @@ export function startVoiceApp() {
           type: 'conversation.item.create',
           item: { type: 'function_call_output', call_id: ev.call_id, output: JSON.stringify(output) },
         });
-        call.needsFollowUp = true;
+        call.needsFollowUp = args.lang === 'en' ? 'en' : 'es';
         renderMetrics();
         break;
       }
@@ -243,8 +243,9 @@ export function startVoiceApp() {
         const usage = ev.response?.usage;
         if (usage) call.tokens += usage.total_tokens ?? (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
         if (call.needsFollowUp) {
+          const lang = call.needsFollowUp;
           call.needsFollowUp = false;
-          send({ type: 'response.create' });
+          send({ type: 'response.create', response: { instructions: followUpInstructions(lang) } });
         }
         renderMetrics();
         break;
@@ -277,7 +278,7 @@ export function startVoiceApp() {
     setHint('Abriendo la sesión…');
     let session;
     try {
-      const res = await fetch('/api/voice', {
+      const res = await fetch(document.body.dataset.voiceApi, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ turnstileToken }),
@@ -286,7 +287,7 @@ export function startVoiceApp() {
       if (!res.ok) throw new Error(session.message || `Error ${res.status}`);
     } catch (err) {
       mic.getTracks().forEach((tr) => tr.stop());
-      fail(err.message);
+      fail(err instanceof TypeError ? 'No se pudo contactar al servidor de voz. Intenta más tarde.' : err.message);
       return;
     }
 
@@ -302,7 +303,7 @@ export function startVoiceApp() {
       tokens: 0,
       agentSpeaking: false,
       userStoppedAt: null,
-      needsFollowUp: false,
+      needsFollowUp: false, // 'es' | 'en' cuando hay que pedir la respuesta tras una herramienta
       deadline: Date.now() + session.maxCallSeconds * 1000,
       tick: 0,
     };
