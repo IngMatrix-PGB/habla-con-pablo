@@ -1,0 +1,264 @@
+---
+import { AGENT_NAME } from '../lib/agent.js';
+import { profile } from '../lib/profile.js';
+import { env, envInt } from '../lib/env.js';
+
+export const prerender = false;
+
+const turnstileSiteKey = env('TURNSTILE_SITE_KEY');
+const maxCallSeconds = envInt('MAX_CALL_SECONDS', 300);
+const dailyCalls = envInt('DAILY_CALLS_PER_IP', 1);
+const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Habla con Pablo</title>
+    <meta name="description" content={`Pregúntale por voz a ${AGENT_NAME} sobre la carrera de ${profile.name}.`} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    {turnstileSiteKey && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">PG</span>
+        <div>
+          <p class="eyebrow">Laboratorio de voz</p>
+          <h1>Habla con Pablo</h1>
+        </div>
+      </div>
+      <nav class="links">
+        <a href={profile.contact.linkedin} target="_blank" rel="noopener">LinkedIn</a>
+        <a href={profile.contact.github} target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="stage" aria-labelledby="stage-title">
+        <p class="status-pill" id="status" data-state="idle"><span class="dot"></span><span id="status-text">Lista</span></p>
+        <h2 id="stage-title" class="stage-title">
+          Pregúntale a {AGENT_NAME} por {profile.name.split(' ')[0]}
+        </h2>
+        <p class="stage-sub">{profile.headline}</p>
+
+        <div class="orb-wrap">
+          <canvas id="orb" width="560" height="560" aria-hidden="true"></canvas>
+          <div class="orb-center">
+            <span class="agent-name">{AGENT_NAME}</span>
+            <span class="timer" id="timer">{fmt(maxCallSeconds)}</span>
+          </div>
+        </div>
+
+        <p class="hint" id="hint">Habla en español o en inglés. Puedes interrumpirla en cualquier momento.</p>
+
+        {turnstileSiteKey && <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-callback="onTurnstile" data-theme="auto"></div>}
+
+        <div class="controls">
+          <button id="call" class="btn primary" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
+            <span id="call-label">Iniciar conversación</span>
+          </button>
+          <button id="mute" class="btn ghost" type="button" disabled aria-pressed="false">Silenciar micrófono</button>
+        </div>
+
+        <p class="fineprint">
+          {dailyCalls} {dailyCalls === 1 ? 'llamada' : 'llamadas'} al día · hasta {Math.round(maxCallSeconds / 60)} min ·
+          La conversación no se guarda en este sitio.
+        </p>
+
+        <div class="suggestions" aria-label="Ideas para preguntar">
+          <span>¿Qué certificaciones tiene?</span>
+          <span>Tell me about his Kubernetes experience</span>
+          <span>¿Qué es Ayuuk para Todos?</span>
+          <span>¿Cómo lo contacto?</span>
+        </div>
+      </section>
+
+      <aside class="side">
+        <section class="panel transcript-panel" aria-labelledby="t-title">
+          <header class="panel-head">
+            <h3 id="t-title">Transcripción</h3>
+            <span class="muted" id="turns">0 turnos</span>
+          </header>
+          <ol id="transcript" class="transcript" aria-live="polite">
+            <li class="empty">La conversación aparecerá aquí, junto con las consultas que hace el agente a sus herramientas.</li>
+          </ol>
+        </section>
+
+        <section class="panel" aria-labelledby="m-title">
+          <header class="panel-head">
+            <h3 id="m-title">Métricas en vivo</h3>
+            <span class="muted">esta llamada</span>
+          </header>
+          <dl class="metrics">
+            <div><dt>Conexión</dt><dd id="m-connect">—</dd></div>
+            <div><dt>Último turno</dt><dd id="m-last">—</dd></div>
+            <div><dt>Turno p50</dt><dd id="m-p50">—</dd></div>
+            <div><dt>Interrupciones</dt><dd id="m-interrupts">0</dd></div>
+            <div><dt>Herramientas</dt><dd id="m-tools">0</dd></div>
+            <div><dt>Tokens</dt><dd id="m-tokens">0</dd></div>
+          </dl>
+          <p class="metric-note">“Turno” = desde que dejas de hablar hasta que suena la respuesta.</p>
+          <ul class="stack">
+            <li>WebRTC</li><li>OpenAI Realtime</li><li>Tool calling</li><li>Token temporal</li><li>Límite por IP</li>
+          </ul>
+        </section>
+      </aside>
+    </main>
+
+    <audio id="remote-audio" autoplay></audio>
+
+    <style is:global>
+      :root {
+        --bg: #f6f7fb;
+        --surface: #ffffff;
+        --surface-2: #eef1f7;
+        --ink: #0f1b33;
+        --ink-2: #4a5670;
+        --muted: #7a859c;
+        --line: #dde2ec;
+        --navy: #12285a;
+        --accent: #2f6fed;
+        --accent-ink: #ffffff;
+        --ok: #1f9d63;
+        --warn: #c27a00;
+        --bad: #c8372d;
+        --serif: Georgia, 'Times New Roman', serif;
+        --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --surface: #111a2c;
+          --surface-2: #17223a;
+          --ink: #e8edf7;
+          --ink-2: #b3bdd1;
+          --muted: #7f8aa3;
+          --line: #24304a;
+          --navy: #9db8ff;
+          --accent: #5b8cff;
+          --accent-ink: #0b1220;
+          color-scheme: dark;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.5 var(--sans);
+        min-height: 100vh;
+      }
+      a { color: inherit; }
+      .topbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--surface);
+      }
+      .brand { display: flex; align-items: center; gap: 12px; }
+      .mark {
+        display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px;
+        background: var(--navy); color: var(--surface); font: 700 14px/1 var(--serif); letter-spacing: .5px;
+      }
+      .eyebrow { margin: 0; font: 600 11px/1.2 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+      h1 { margin: 2px 0 0; font: 700 18px/1.2 var(--serif); color: var(--navy); }
+      .links { display: flex; gap: 16px; font-size: 14px; }
+      .links a { color: var(--ink-2); text-decoration: none; }
+      .links a:hover { color: var(--accent); text-decoration: underline; }
+
+      .layout {
+        display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr);
+        gap: 24px; padding: 24px; max-width: 1280px; margin: 0 auto;
+      }
+      .stage {
+        background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+        padding: 28px 24px; display: flex; flex-direction: column; align-items: center; text-align: center;
+      }
+      .status-pill {
+        display: inline-flex; align-items: center; gap: 8px; margin: 0;
+        padding: 4px 12px; border-radius: 999px; background: var(--surface-2);
+        font: 600 12px/1.6 var(--sans); color: var(--ink-2);
+      }
+      .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+      .status-pill[data-state='live'] .dot { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 25%, transparent); }
+      .status-pill[data-state='connecting'] .dot { background: var(--warn); }
+      .status-pill[data-state='error'] .dot { background: var(--bad); }
+      .stage-title { margin: 14px 0 4px; font: 700 clamp(22px, 3vw, 30px)/1.2 var(--serif); color: var(--navy); }
+      .stage-sub { margin: 0; color: var(--ink-2); max-width: 46ch; }
+
+      .orb-wrap { position: relative; width: min(340px, 78vw); aspect-ratio: 1; margin: 20px 0 8px; }
+      #orb { width: 100%; height: 100%; display: block; }
+      .orb-center {
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+        pointer-events: none;
+      }
+      .agent-name { font: 700 22px/1 var(--serif); color: var(--navy); }
+      .timer { font: 500 13px/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+      .hint { margin: 0 0 16px; color: var(--ink-2); min-height: 1.5em; max-width: 52ch; }
+      .hint.error { color: var(--bad); }
+      .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 11px 18px;
+        font: 600 15px/1 var(--sans); cursor: pointer; border: 1px solid transparent; transition: background .15s, opacity .15s;
+      }
+      .btn svg { width: 18px; height: 18px; fill: currentColor; }
+      .btn.primary { background: var(--accent); color: var(--accent-ink); }
+      .btn.primary:hover { filter: brightness(1.05); }
+      .btn.primary.hangup { background: var(--bad); color: #fff; }
+      .btn.ghost { background: transparent; color: var(--ink-2); border-color: var(--line); }
+      .btn.ghost[aria-pressed='true'] { background: var(--surface-2); color: var(--ink); }
+      .btn:disabled { opacity: .45; cursor: not-allowed; }
+      .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .fineprint { margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+      .cf-turnstile { margin-bottom: 12px; }
+      .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
+      .suggestions span {
+        font-size: 13px; color: var(--ink-2); background: var(--surface-2); border-radius: 999px; padding: 5px 12px;
+      }
+
+      .side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+      .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
+      .panel-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+      .panel h3 { margin: 0; font: 700 13px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+      .muted { color: var(--muted); font-size: 12px; }
+      .transcript-panel { flex: 1; display: flex; flex-direction: column; min-height: 320px; }
+      .transcript { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 52vh; }
+      .transcript .empty { color: var(--muted); font-size: 14px; }
+      .msg { padding: 9px 12px; border-radius: 12px; max-width: 92%; font-size: 14px; }
+      .msg .who { display: block; font: 600 11px/1.4 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+      .msg.user { align-self: flex-end; background: var(--surface-2); }
+      .msg.agent { align-self: flex-start; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+      .msg.pending .text::after { content: '…'; color: var(--muted); }
+      .tool { align-self: flex-start; font: 12px/1.4 var(--mono); color: var(--ink-2); border: 1px dashed var(--line); border-radius: 8px; padding: 4px 8px; }
+
+      .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+      .metrics div { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+      .metrics dt { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+      .metrics dd { margin: 4px 0 0; font: 600 18px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+      .metric-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+      .stack { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 12px 0 0; }
+      .stack li { font: 11px/1 var(--mono); padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink-2); }
+
+      @media (max-width: 900px) {
+        .layout { grid-template-columns: 1fr; padding: 16px; gap: 16px; }
+        .topbar { padding: 12px 16px; }
+        .transcript { max-height: 40vh; }
+      }
+      @media (max-width: 480px) {
+        .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .links { gap: 10px; font-size: 13px; }
+      }
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    </style>
+
+    <script>
+      import { startVoiceApp } from '../lib/voice-client.js';
+      startVoiceApp();
+    </script>
+  </body>
+</html>

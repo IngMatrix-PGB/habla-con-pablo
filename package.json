@@ -1,0 +1,20 @@
+{
+  "name": "habla-con-pablo",
+  "version": "1.0.0",
+  "description": "Agente de voz que responde preguntas sobre la carrera de Pablo Galeana Bailey",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "start": "node ./dist/server/entry.mjs",
+    "test": "node --test test/*.test.js"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "dependencies": {
+    "@astrojs/node": "^11.1.10",
+    "astro": "^7.4.6"
+  },
+  "private": true
+}
