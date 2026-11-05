@@ -1,6 +1,7 @@
 // Cliente de voz: WebRTC con OpenAI Realtime, transcripción, herramientas y métricas.
 import { runTool, followUpInstructions, AGENT_NAME } from './agent.js';
 import { median } from './stats.js';
+import { createRobotVoice } from './robot-voice.js';
 
 const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
@@ -13,6 +14,7 @@ export function startVoiceApp() {
     call: $('call'),
     callLabel: $('call-label'),
     mute: $('mute'),
+    robot: $('robot'),
     timer: $('timer'),
     transcript: $('transcript'),
     turns: $('turns'),
@@ -29,6 +31,16 @@ export function startVoiceApp() {
   };
 
   let turnstileToken = '';
+  let robot = null; // efecto de voz activo
+  let robotOn = true;
+  try {
+    robotOn = localStorage.getItem('robotVoice') !== 'off';
+  } catch {}
+  const renderRobot = () => {
+    ui.robot.setAttribute('aria-pressed', String(robotOn));
+    ui.robot.textContent = robotOn ? 'Voz: robot' : 'Voz: normal';
+  };
+  renderRobot();
   window.onTurnstile = (token) => (turnstileToken = token);
 
   let call = null; // estado de la llamada activa
@@ -264,6 +276,9 @@ export function startVoiceApp() {
 
   // ---------- Llamada ----------
   async function start() {
+    // Crear/reanudar el AudioContext dentro del clic (política de autoplay).
+    audioCtx ??= new AudioContext();
+    audioCtx.resume();
     ui.call.disabled = true;
     setStatus('connecting', 'Conectando');
     setHint('Pidiendo permiso para usar tu micrófono…');
@@ -318,8 +333,12 @@ export function startVoiceApp() {
     };
 
     pc.ontrack = (e) => {
+      // Chrome solo entrega audio WebRTC a Web Audio si el stream también está en un <audio>;
+      // se silencia el elemento y el sonido sale por la cadena del efecto.
       ui.audio.srcObject = e.streams[0];
-      remoteAnalyser = analyserFor(e.streams[0]);
+      ui.audio.muted = true;
+      robot = createRobotVoice(audioCtx, e.streams[0], { enabled: robotOn });
+      remoteAnalyser = robot.analyser;
     };
     pc.onconnectionstatechange = () => {
       if (['failed', 'disconnected'].includes(pc.connectionState) && call) {
@@ -428,6 +447,8 @@ export function startVoiceApp() {
     call.pc.getSenders().forEach((s) => s.track?.stop());
     call.pc.close();
     call.mic.getTracks().forEach((tr) => tr.stop());
+    robot?.stop();
+    robot = null;
     ui.audio.srcObject = null;
     micAnalyser = null;
     remoteAnalyser = null;
@@ -451,6 +472,14 @@ export function startVoiceApp() {
   }
 
   ui.call.addEventListener('click', () => (call ? hangUp() : start()));
+  ui.robot.addEventListener('click', () => {
+    robotOn = !robotOn;
+    robot?.setEnabled(robotOn);
+    renderRobot();
+    try {
+      localStorage.setItem('robotVoice', robotOn ? 'on' : 'off');
+    } catch {}
+  });
   ui.mute.addEventListener('click', () => {
     if (!call) return;
     const track = call.mic.getAudioTracks()[0];

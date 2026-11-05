@@ -63,7 +63,7 @@ const handle = profile.contact.github.split('/').pop();
             </div>
           </div>
 
-          <p class="hint" id="hint">Habla en español o en inglés. Puedes interrumpirla en cualquier momento.</p>
+          <p class="hint" id="hint">Habla en español o en inglés. Puedes interrumpirlo en cualquier momento.</p>
 
           {turnstileSiteKey && <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-callback="onTurnstile" data-theme="dark"></div>}
 
@@ -73,6 +73,7 @@ const handle = profile.contact.github.split('/').pop();
               <span id="call-label">Iniciar conversación</span>
             </button>
             <button id="mute" class="btn ghost" type="button" disabled aria-pressed="false">Silenciar micrófono</button>
+            <button id="robot" class="btn ghost" type="button" aria-pressed="true" title="Activa o quita el efecto robot en la voz">Voz: robot</button>
           </div>
 
           <p class="fineprint">
@@ -108,7 +109,7 @@ const handle = profile.contact.github.split('/').pop();
           </dl>
           <p class="metric-note"># turno = desde que dejas de hablar hasta que suena la respuesta</p>
           <ul class="stack">
-            <li>webrtc</li><li>openai-realtime</li><li>tool-calling</li><li>ephemeral-token</li><li>rate-limit/ip</li>
+            <li>webrtc</li><li>openai-realtime</li><li>tool-calling</li><li>ephemeral-token</li><li>rate-limit/ip</li><li>web-audio-fx</li>
           </ul>
         </section>
       </aside>

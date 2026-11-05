@@ -77,7 +77,7 @@ export function buildSession(env) {
         transcription: { model: 'gpt-4o-mini-transcribe' },
         turn_detection: { type: 'server_vad' },
       },
-      output: { voice: env.REALTIME_VOICE || 'marin' },
+      output: { voice: env.REALTIME_VOICE || 'ash' },
     },
   };
 }

@@ -8,7 +8,7 @@ preview_urls = false
 [vars]
 ALLOWED_ORIGINS = "https://ingmatrix-pgb.github.io,http://localhost:4321"
 REALTIME_MODEL = "gpt-realtime"
-REALTIME_VOICE = "marin"
+REALTIME_VOICE = "ash"         # voz masculina; el efecto robot se aplica en el navegador
 MAX_CALL_SECONDS = "300"        # minutos de voz por IP al día
 RESUME_WINDOW_SECONDS = "1800"  # se puede pausar y reanudar durante 30 min
 MAX_SESSIONS_PER_DAY = "3"    # en cuántas partes se pueden repartir esos minutos
