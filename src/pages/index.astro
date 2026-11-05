@@ -9,6 +9,7 @@ const turnstileSiteKey = env('TURNSTILE_SITE_KEY');
 const maxCallSeconds = envInt('MAX_CALL_SECONDS', 300);
 const dailyCalls = envInt('DAILY_CALLS_PER_IP', 1);
 const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+const handle = profile.contact.github.split('/').pop();
 ---
 
 <!doctype html>
@@ -16,248 +17,284 @@ const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${Str
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#030604" />
     <title>Habla con Pablo</title>
     <meta name="description" content={`Pregúntale por voz a ${AGENT_NAME} sobre la carrera de ${profile.name}.`} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
     {turnstileSiteKey && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
   </head>
   <body>
+    <canvas id="rain" aria-hidden="true"></canvas>
+    <div class="scanlines" aria-hidden="true"></div>
+
     <header class="topbar">
       <div class="brand">
-        <span class="mark" aria-hidden="true">PG</span>
+        <span class="mark" aria-hidden="true">&gt;_</span>
         <div>
-          <p class="eyebrow">Laboratorio de voz</p>
-          <h1>Habla con Pablo</h1>
+          <p class="eyebrow">{handle} · voice lab</p>
+          <h1>habla_con_pablo<span class="cursor" aria-hidden="true">█</span></h1>
         </div>
       </div>
       <nav class="links">
-        <a href={profile.contact.linkedin} target="_blank" rel="noopener">LinkedIn</a>
-        <a href={profile.contact.github} target="_blank" rel="noopener">GitHub</a>
+        <a href={profile.contact.linkedin} target="_blank" rel="noopener">[linkedin]</a>
+        <a href={profile.contact.github} target="_blank" rel="noopener">[github]</a>
       </nav>
     </header>
 
     <main class="layout">
-      <section class="stage" aria-labelledby="stage-title">
-        <p class="status-pill" id="status" data-state="idle"><span class="dot"></span><span id="status-text">Lista</span></p>
-        <h2 id="stage-title" class="stage-title">
-          Pregúntale a {AGENT_NAME} por {profile.name.split(' ')[0]}
-        </h2>
-        <p class="stage-sub">{profile.headline}</p>
+      <section class="stage window" aria-labelledby="stage-title">
+        <div class="chrome"><i></i><i></i><i></i><span>~/{handle}/voice --agent={AGENT_NAME.toLowerCase()}</span></div>
+        <div class="stage-body">
+          <p class="status-pill" id="status" data-state="idle"><span class="dot"></span><span id="status-text">Lista</span></p>
+          <h2 id="stage-title" class="stage-title">
+            <span class="prompt">$</span> pregúntale a <em>{AGENT_NAME}</em> por {profile.name.split(' ')[0]}
+          </h2>
+          <p class="stage-sub">// {profile.headline}</p>
 
-        <div class="orb-wrap">
-          <canvas id="orb" width="560" height="560" aria-hidden="true"></canvas>
-          <div class="orb-center">
-            <span class="agent-name">{AGENT_NAME}</span>
-            <span class="timer" id="timer">{fmt(maxCallSeconds)}</span>
+          <div class="orb-wrap">
+            <canvas id="orb" width="560" height="560" aria-hidden="true"></canvas>
+            <div class="orb-center">
+              <span class="agent-name">{AGENT_NAME}</span>
+              <span class="timer" id="timer">{fmt(maxCallSeconds)}</span>
+            </div>
           </div>
-        </div>
 
-        <p class="hint" id="hint">Habla en español o en inglés. Puedes interrumpirla en cualquier momento.</p>
+          <p class="hint" id="hint">Habla en español o en inglés. Puedes interrumpirla en cualquier momento.</p>
 
-        {turnstileSiteKey && <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-callback="onTurnstile" data-theme="auto"></div>}
+          {turnstileSiteKey && <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-callback="onTurnstile" data-theme="dark"></div>}
 
-        <div class="controls">
-          <button id="call" class="btn primary" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
-            <span id="call-label">Iniciar conversación</span>
-          </button>
-          <button id="mute" class="btn ghost" type="button" disabled aria-pressed="false">Silenciar micrófono</button>
-        </div>
+          <div class="controls">
+            <button id="call" class="btn primary" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
+              <span id="call-label">Iniciar conversación</span>
+            </button>
+            <button id="mute" class="btn ghost" type="button" disabled aria-pressed="false">Silenciar micrófono</button>
+          </div>
 
-        <p class="fineprint">
-          {dailyCalls} {dailyCalls === 1 ? 'llamada' : 'llamadas'} al día · hasta {Math.round(maxCallSeconds / 60)} min ·
-          La conversación no se guarda en este sitio.
-        </p>
+          <p class="fineprint">
+            # {dailyCalls} {dailyCalls === 1 ? 'llamada' : 'llamadas'}/día · máx {Math.round(maxCallSeconds / 60)} min · la conversación no se guarda en este sitio
+          </p>
 
-        <div class="suggestions" aria-label="Ideas para preguntar">
-          <span>¿Qué certificaciones tiene?</span>
-          <span>Tell me about his Kubernetes experience</span>
-          <span>¿Qué es Ayuuk para Todos?</span>
-          <span>¿Cómo lo contacto?</span>
+          <div class="suggestions" aria-label="Ideas para preguntar">
+            <span>¿Qué certificaciones tiene?</span>
+            <span>Tell me about his Kubernetes experience</span>
+            <span>¿Qué es Ayuuk para Todos?</span>
+            <span>¿Cómo lo contacto?</span>
+          </div>
         </div>
       </section>
 
       <aside class="side">
-        <section class="panel transcript-panel" aria-labelledby="t-title">
-          <header class="panel-head">
-            <h3 id="t-title">Transcripción</h3>
-            <span class="muted" id="turns">0 turnos</span>
-          </header>
+        <section class="window transcript-panel" aria-labelledby="t-title">
+          <div class="chrome"><i></i><i></i><i></i><span id="t-title">transcript.log</span><span class="muted" id="turns">0 turnos</span></div>
           <ol id="transcript" class="transcript" aria-live="polite">
-            <li class="empty">La conversación aparecerá aquí, junto con las consultas que hace el agente a sus herramientas.</li>
+            <li class="empty">esperando conexión… la conversación y cada llamada a herramientas aparecen aquí.</li>
           </ol>
         </section>
 
-        <section class="panel" aria-labelledby="m-title">
-          <header class="panel-head">
-            <h3 id="m-title">Métricas en vivo</h3>
-            <span class="muted">esta llamada</span>
-          </header>
+        <section class="window" aria-labelledby="m-title">
+          <div class="chrome"><i></i><i></i><i></i><span id="m-title">metrics --live</span><span class="muted">esta llamada</span></div>
           <dl class="metrics">
-            <div><dt>Conexión</dt><dd id="m-connect">—</dd></div>
-            <div><dt>Último turno</dt><dd id="m-last">—</dd></div>
-            <div><dt>Turno p50</dt><dd id="m-p50">—</dd></div>
-            <div><dt>Interrupciones</dt><dd id="m-interrupts">0</dd></div>
-            <div><dt>Herramientas</dt><dd id="m-tools">0</dd></div>
-            <div><dt>Tokens</dt><dd id="m-tokens">0</dd></div>
+            <div><dt>conexión</dt><dd id="m-connect">—</dd></div>
+            <div><dt>último turno</dt><dd id="m-last">—</dd></div>
+            <div><dt>turno p50</dt><dd id="m-p50">—</dd></div>
+            <div><dt>interrupciones</dt><dd id="m-interrupts">0</dd></div>
+            <div><dt>tools</dt><dd id="m-tools">0</dd></div>
+            <div><dt>tokens</dt><dd id="m-tokens">0</dd></div>
           </dl>
-          <p class="metric-note">“Turno” = desde que dejas de hablar hasta que suena la respuesta.</p>
+          <p class="metric-note"># turno = desde que dejas de hablar hasta que suena la respuesta</p>
           <ul class="stack">
-            <li>WebRTC</li><li>OpenAI Realtime</li><li>Tool calling</li><li>Token temporal</li><li>Límite por IP</li>
+            <li>webrtc</li><li>openai-realtime</li><li>tool-calling</li><li>ephemeral-token</li><li>rate-limit/ip</li>
           </ul>
         </section>
       </aside>
     </main>
 
+    <footer class="foot">
+      <span>© {new Date().getFullYear()} {profile.name}</span>
+      <span>built by {handle} · astro + webrtc</span>
+    </footer>
+
     <audio id="remote-audio" autoplay></audio>
 
     <style is:global>
       :root {
-        --bg: #f6f7fb;
-        --surface: #ffffff;
-        --surface-2: #eef1f7;
-        --ink: #0f1b33;
-        --ink-2: #4a5670;
-        --muted: #7a859c;
-        --line: #dde2ec;
-        --navy: #12285a;
-        --accent: #2f6fed;
-        --accent-ink: #ffffff;
-        --ok: #1f9d63;
-        --warn: #c27a00;
-        --bad: #c8372d;
-        --serif: Georgia, 'Times New Roman', serif;
-        --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-        --mono: ui-monospace, 'SF Mono', Menlo, monospace;
-        color-scheme: light;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0b1220;
-          --surface: #111a2c;
-          --surface-2: #17223a;
-          --ink: #e8edf7;
-          --ink-2: #b3bdd1;
-          --muted: #7f8aa3;
-          --line: #24304a;
-          --navy: #9db8ff;
-          --accent: #5b8cff;
-          --accent-ink: #0b1220;
-          color-scheme: dark;
-        }
+        --bg: #030604;
+        --surface: rgba(6, 14, 9, 0.86);
+        --surface-2: #0b1a10;
+        --ink: #c8ffd9;
+        --ink-2: #7fc89a;
+        --muted: #4f7d60;
+        --line: #143321;
+        --accent: #39ff88;      /* voz del agente, acciones */
+        --accent-dim: #1f8f4d;
+        --accent-ink: #021208;
+        --user: #4de1ff;        /* tu voz */
+        --ok: #39ff88;
+        --warn: #ffb547;
+        --bad: #ff4d6d;
+        --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+        color-scheme: dark;
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; }
       body {
-        background: var(--bg);
+        background: radial-gradient(1200px 700px at 30% 10%, #06200f 0%, var(--bg) 60%);
+        background-color: var(--bg);
         color: var(--ink);
-        font: 15px/1.5 var(--sans);
+        font: 14px/1.6 var(--mono);
         min-height: 100vh;
+        display: flex; flex-direction: column;
       }
+      ::selection { background: var(--accent); color: var(--accent-ink); }
       a { color: inherit; }
+      #rain { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; opacity: .22; pointer-events: none; }
+      .scanlines {
+        position: fixed; inset: 0; z-index: 1; pointer-events: none;
+        background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, .18) 2px 3px);
+      }
+      .topbar, .layout, .foot { position: relative; z-index: 2; }
+
       .topbar {
         display: flex; align-items: center; justify-content: space-between; gap: 16px;
-        padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--surface);
+        padding: 14px 24px; border-bottom: 1px solid var(--line); background: rgba(3, 6, 4, .8); backdrop-filter: blur(6px);
       }
       .brand { display: flex; align-items: center; gap: 12px; }
       .mark {
-        display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px;
-        background: var(--navy); color: var(--surface); font: 700 14px/1 var(--serif); letter-spacing: .5px;
+        display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px;
+        border: 1px solid var(--accent-dim); color: var(--accent); font-weight: 800; font-size: 15px;
+        box-shadow: 0 0 18px rgba(57, 255, 136, .18) inset;
       }
-      .eyebrow { margin: 0; font: 600 11px/1.2 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-      h1 { margin: 2px 0 0; font: 700 18px/1.2 var(--serif); color: var(--navy); }
-      .links { display: flex; gap: 16px; font-size: 14px; }
+      .eyebrow { margin: 0; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+      h1 { margin: 0; font-size: 17px; font-weight: 800; color: var(--accent); text-shadow: 0 0 10px rgba(57, 255, 136, .45); }
+      .cursor { margin-left: 2px; animation: blink 1.1s steps(1) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+      .links { display: flex; gap: 14px; font-size: 13px; }
       .links a { color: var(--ink-2); text-decoration: none; }
-      .links a:hover { color: var(--accent); text-decoration: underline; }
+      .links a:hover, .links a:focus-visible { color: var(--accent); }
 
       .layout {
+        flex: 1; width: 100%;
         display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr);
-        gap: 24px; padding: 24px; max-width: 1280px; margin: 0 auto;
+        gap: 20px; padding: 24px; max-width: 1280px; margin: 0 auto;
       }
-      .stage {
-        background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
-        padding: 28px 24px; display: flex; flex-direction: column; align-items: center; text-align: center;
+      .window {
+        background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+        box-shadow: 0 0 0 1px rgba(57, 255, 136, .03), 0 20px 60px rgba(0, 0, 0, .55);
       }
+      .chrome {
+        display: flex; align-items: center; gap: 6px; padding: 9px 14px; border-bottom: 1px solid var(--line);
+        background: rgba(11, 26, 16, .9); font-size: 12px; color: var(--muted);
+      }
+      .chrome i { width: 10px; height: 10px; border-radius: 50%; background: #1d3a27; flex: none; }
+      .chrome i:first-child { background: #ff5f57; opacity: .7; }
+      .chrome i:nth-child(2) { background: #febc2e; opacity: .7; }
+      .chrome i:nth-child(3) { background: var(--accent); opacity: .7; }
+      .chrome span:first-of-type { margin-left: 8px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .chrome .muted { margin-left: auto; }
+
+      .stage-body { padding: 26px 24px 28px; display: flex; flex-direction: column; align-items: center; text-align: center; }
       .status-pill {
         display: inline-flex; align-items: center; gap: 8px; margin: 0;
-        padding: 4px 12px; border-radius: 999px; background: var(--surface-2);
-        font: 600 12px/1.6 var(--sans); color: var(--ink-2);
+        padding: 3px 12px; border-radius: 4px; border: 1px solid var(--line);
+        font-size: 12px; text-transform: lowercase; color: var(--ink-2);
       }
       .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-      .status-pill[data-state='live'] .dot { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 25%, transparent); }
-      .status-pill[data-state='connecting'] .dot { background: var(--warn); }
+      .status-pill[data-state='live'] { border-color: var(--accent-dim); color: var(--accent); }
+      .status-pill[data-state='live'] .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+      .status-pill[data-state='connecting'] .dot { background: var(--warn); animation: blink .8s steps(1) infinite; }
+      .status-pill[data-state='error'] { border-color: var(--bad); color: var(--bad); }
       .status-pill[data-state='error'] .dot { background: var(--bad); }
-      .stage-title { margin: 14px 0 4px; font: 700 clamp(22px, 3vw, 30px)/1.2 var(--serif); color: var(--navy); }
-      .stage-sub { margin: 0; color: var(--ink-2); max-width: 46ch; }
+      .stage-title { margin: 16px 0 4px; font-size: clamp(19px, 2.6vw, 26px); font-weight: 800; color: var(--ink); line-height: 1.3; }
+      .stage-title .prompt { color: var(--accent); }
+      .stage-title em { font-style: normal; color: var(--accent); text-shadow: 0 0 12px rgba(57, 255, 136, .5); }
+      .stage-sub { margin: 0; color: var(--muted); max-width: 52ch; font-size: 13px; }
 
-      .orb-wrap { position: relative; width: min(340px, 78vw); aspect-ratio: 1; margin: 20px 0 8px; }
+      .orb-wrap { position: relative; width: min(330px, 76vw); aspect-ratio: 1; margin: 18px 0 6px; }
       #orb { width: 100%; height: 100%; display: block; }
       .orb-center {
-        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
         pointer-events: none;
       }
-      .agent-name { font: 700 22px/1 var(--serif); color: var(--navy); }
-      .timer { font: 500 13px/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+      .agent-name { font-size: 22px; font-weight: 800; letter-spacing: .08em; color: var(--accent); text-shadow: 0 0 14px rgba(57, 255, 136, .6); }
+      .timer { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-      .hint { margin: 0 0 16px; color: var(--ink-2); min-height: 1.5em; max-width: 52ch; }
+      .hint { margin: 0 0 16px; color: var(--ink-2); min-height: 1.6em; max-width: 56ch; }
+      .hint::before { content: '> '; color: var(--accent); }
       .hint.error { color: var(--bad); }
+      .hint.error::before { content: '! '; color: var(--bad); }
       .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
       .btn {
-        display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 11px 18px;
-        font: 600 15px/1 var(--sans); cursor: pointer; border: 1px solid transparent; transition: background .15s, opacity .15s;
+        display: inline-flex; align-items: center; gap: 8px; border-radius: 6px; padding: 11px 18px;
+        font: 700 14px/1 var(--mono); cursor: pointer; border: 1px solid transparent; transition: box-shadow .15s, background .15s, opacity .15s;
       }
-      .btn svg { width: 18px; height: 18px; fill: currentColor; }
-      .btn.primary { background: var(--accent); color: var(--accent-ink); }
-      .btn.primary:hover { filter: brightness(1.05); }
-      .btn.primary.hangup { background: var(--bad); color: #fff; }
+      .btn svg { width: 17px; height: 17px; fill: currentColor; }
+      .btn.primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 18px rgba(57, 255, 136, .35); }
+      .btn.primary:hover { box-shadow: 0 0 28px rgba(57, 255, 136, .6); }
+      .btn.primary.hangup { background: var(--bad); color: #fff; box-shadow: 0 0 18px rgba(255, 77, 109, .4); }
       .btn.ghost { background: transparent; color: var(--ink-2); border-color: var(--line); }
-      .btn.ghost[aria-pressed='true'] { background: var(--surface-2); color: var(--ink); }
-      .btn:disabled { opacity: .45; cursor: not-allowed; }
-      .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-      .fineprint { margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+      .btn.ghost[aria-pressed='true'] { border-color: var(--warn); color: var(--warn); }
+      .btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+      .btn:focus-visible { outline: 2px solid var(--user); outline-offset: 3px; }
+      .fineprint { margin: 14px 0 0; font-size: 11px; color: var(--muted); }
       .cf-turnstile { margin-bottom: 12px; }
       .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
-      .suggestions span {
-        font-size: 13px; color: var(--ink-2); background: var(--surface-2); border-radius: 999px; padding: 5px 12px;
-      }
+      .suggestions span { font-size: 12px; color: var(--ink-2); border: 1px dashed var(--line); border-radius: 4px; padding: 4px 10px; }
 
-      .side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
-      .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
-      .panel-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
-      .panel h3 { margin: 0; font: 700 13px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+      .side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
       .muted { color: var(--muted); font-size: 12px; }
       .transcript-panel { flex: 1; display: flex; flex-direction: column; min-height: 320px; }
-      .transcript { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 52vh; }
-      .transcript .empty { color: var(--muted); font-size: 14px; }
-      .msg { padding: 9px 12px; border-radius: 12px; max-width: 92%; font-size: 14px; }
-      .msg .who { display: block; font: 600 11px/1.4 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
-      .msg.user { align-self: flex-end; background: var(--surface-2); }
-      .msg.agent { align-self: flex-start; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
-      .msg.pending .text::after { content: '…'; color: var(--muted); }
-      .tool { align-self: flex-start; font: 12px/1.4 var(--mono); color: var(--ink-2); border: 1px dashed var(--line); border-radius: 8px; padding: 4px 8px; }
+      .transcript {
+        list-style: none; margin: 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+        overflow-y: auto; max-height: 52vh; font-size: 13px;
+      }
+      .transcript .empty { color: var(--muted); }
+      .transcript .empty::before { content: '$ '; color: var(--accent); }
+      .msg { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; }
+      .msg .ts { color: var(--muted); font-size: 11px; padding-top: 2px; }
+      .msg .who { font-weight: 700; }
+      .msg .who::after { content: '>'; margin-left: 2px; }
+      .msg .text { grid-column: 2; color: var(--ink); white-space: pre-wrap; }
+      .msg.user .who { color: var(--user); }
+      .msg.agent .who { color: var(--accent); }
+      .msg.pending .text::after { content: '█'; color: var(--accent); animation: blink 1s steps(1) infinite; margin-left: 2px; }
+      .tool { color: var(--warn); font-size: 12px; padding-left: 4px; border-left: 2px solid var(--warn); }
 
-      .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
-      .metrics div { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
-      .metrics dt { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-      .metrics dd { margin: 4px 0 0; font: 600 18px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
-      .metric-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
-      .stack { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 12px 0 0; }
-      .stack li { font: 11px/1 var(--mono); padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink-2); }
+      .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 0; background: var(--line); border-bottom: 1px solid var(--line); }
+      .metrics div { background: rgba(5, 12, 8, .95); padding: 12px 14px; }
+      .metrics dt { font-size: 11px; color: var(--muted); }
+      .metrics dd { margin: 4px 0 0; font-size: 18px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+      .metric-note { margin: 10px 16px 0; font-size: 11px; color: var(--muted); }
+      .stack { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 10px 16px 16px; }
+      .stack li { font-size: 11px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink-2); }
+
+      .foot {
+        display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+        padding: 14px 24px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); background: rgba(3, 6, 4, .8);
+      }
 
       @media (max-width: 900px) {
         .layout { grid-template-columns: 1fr; padding: 16px; gap: 16px; }
-        .topbar { padding: 12px 16px; }
+        .topbar, .foot { padding: 12px 16px; }
         .transcript { max-height: 40vh; }
       }
       @media (max-width: 480px) {
         .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .links { gap: 10px; font-size: 13px; }
+        .links { gap: 8px; font-size: 12px; }
+        .eyebrow { display: none; }
       }
-      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+      @media (prefers-reduced-motion: reduce) {
+        * { transition: none !important; animation: none !important; }
+      }
     </style>
 
     <script>
       import { startVoiceApp } from '../lib/voice-client.js';
+      import { startRain } from '../lib/rain.js';
+      startRain(document.getElementById('rain') as HTMLCanvasElement);
       startVoiceApp();
     </script>
   </body>

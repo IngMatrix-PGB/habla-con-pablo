@@ -61,12 +61,15 @@ export function startVoiceApp() {
     clearEmpty();
     el = document.createElement('li');
     el.className = `msg ${role} pending`;
+    const ts = document.createElement('span');
+    ts.className = 'ts';
+    ts.textContent = new Date().toLocaleTimeString('es-MX', { hour12: false });
     const who = document.createElement('span');
     who.className = 'who';
-    who.textContent = role === 'user' ? 'Tú' : AGENT_NAME;
+    who.textContent = role === 'user' ? 'tú' : AGENT_NAME.toLowerCase();
     const text = document.createElement('span');
     text.className = 'text';
-    el.append(who, text);
+    el.append(ts, who, text);
     ui.transcript.append(el);
     bubbles.set(itemId, el);
     if (role === 'user') ui.turns.textContent = `${++turnCount} ${turnCount === 1 ? 'turno' : 'turnos'}`;
@@ -89,7 +92,7 @@ export function startVoiceApp() {
     const el = document.createElement('li');
     el.className = 'tool';
     const shown = args && Object.keys(args).length ? JSON.stringify(args) : '';
-    el.textContent = `⚙ ${name}(${shown})`;
+    el.textContent = `⚙ tool ${name}(${shown})`;
     ui.transcript.append(el);
     scrollDown();
   }
@@ -115,8 +118,8 @@ export function startVoiceApp() {
     const { width: w, height: h } = ui.orb;
     const styles = getComputedStyle(document.documentElement);
     const accent = styles.getPropertyValue('--accent').trim();
-    const line = styles.getPropertyValue('--line').trim();
-    const navy = styles.getPropertyValue('--navy').trim();
+    const line = styles.getPropertyValue('--accent-dim').trim();
+    const userColor = styles.getPropertyValue('--user').trim();
     ctx2d.clearRect(0, 0, w, h);
     const cx = w / 2;
     const cy = h / 2;
@@ -124,7 +127,7 @@ export function startVoiceApp() {
     const agentLevel = level(remoteAnalyser);
     const userLevel = level(micAnalyser);
     const lv = Math.max(agentLevel, userLevel);
-    const color = agentLevel >= userLevel ? accent : navy;
+    const color = agentLevel >= userLevel ? accent : userColor;
     const t = performance.now() / 1000;
 
     ctx2d.lineCap = 'round';
