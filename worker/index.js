@@ -1,7 +1,7 @@
 // Cloudflare Worker: emite el token temporal de OpenAI Realtime para cada llamada.
 // La llave real (OPENAI_API_KEY) es un secreto del Worker y nunca llega al navegador.
 import { instructions, tools } from '../src/lib/agent.js';
-import { createKvLimiter } from './limiter.js';
+import { createCallBudget } from './limiter.js';
 
 const int = (value, fallback) => {
   const n = Number.parseInt(value ?? '', 10);
@@ -36,6 +36,32 @@ async function verifyTurnstile(env, token, ip) {
   });
   const data = await res.json().catch(() => ({}));
   return data.success === true;
+}
+
+const LIMIT_MESSAGES = {
+  time_used: 'Ya usaste tus minutos de hoy. Vuelve mañana.',
+  window_closed: 'Pasó el tiempo para reanudar la llamada de hoy. Vuelve mañana.',
+  too_many_sessions: 'Pausaste demasiadas veces hoy. Vuelve mañana.',
+};
+
+function budgetFor(env) {
+  return createCallBudget({
+    kv: env.RATE_LIMIT,
+    maxSeconds: int(env.MAX_CALL_SECONDS, 300),
+    windowSeconds: int(env.RESUME_WINDOW_SECONDS, 1800),
+    maxSessions: int(env.MAX_SESSIONS_PER_DAY, 3),
+  });
+}
+
+// El navegador avisa que colgó (sendBeacon). El tiempo se mide aquí, no se confía en el cliente.
+export async function handleEnd(request, env) {
+  const cors = corsHeaders(request, env);
+  if (!cors) return new Response('Origen no permitido', { status: 403 });
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+  if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' }, cors);
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  await budgetFor(env).end(ip);
+  return new Response(null, { status: 204, headers: cors });
 }
 
 export function buildSession(env) {
@@ -73,14 +99,10 @@ export async function handleVoice(request, env, fetchImpl = fetch) {
     return json(403, { error: 'challenge_failed', message: 'No se pudo verificar que eres humano.' }, cors);
   }
 
-  const limiter = createKvLimiter({ kv: env.RATE_LIMIT, limit: int(env.DAILY_CALLS_PER_IP, 1) });
-  const quota = await limiter.take(ip);
+  const budget = budgetFor(env);
+  const quota = await budget.start(ip);
   if (!quota.allowed) {
-    return json(
-      429,
-      { error: 'daily_limit', message: 'Ya usaste tu llamada de hoy. Vuelve mañana.', resetAt: quota.resetAt.toISOString() },
-      cors,
-    );
+    return json(429, { error: 'daily_limit', reason: quota.reason, message: LIMIT_MESSAGES[quota.reason] }, cors);
   }
 
   const session = buildSession(env);
@@ -93,13 +115,13 @@ export async function handleVoice(request, env, fetchImpl = fetch) {
       body: JSON.stringify({ expires_after: { anchor: 'created_at', seconds: 60 }, session }),
     });
   } catch (err) {
-    await limiter.refund(ip);
+    await budget.refund(ip);
     console.error('[voice] OpenAI no responde', err);
     return json(502, { error: 'upstream_unreachable', message: 'El servicio de voz no responde.' }, cors);
   }
 
   if (!upstream.ok) {
-    await limiter.refund(ip);
+    await budget.refund(ip);
     console.error('[voice] OpenAI rechazó la sesión', upstream.status, await upstream.text());
     return json(502, { error: 'upstream_error', message: 'El servicio de voz rechazó la sesión.' }, cors);
   }
@@ -112,7 +134,9 @@ export async function handleVoice(request, env, fetchImpl = fetch) {
       expiresAt: data.expires_at,
       model: session.model,
       maxCallSeconds: int(env.MAX_CALL_SECONDS, 300),
-      remainingToday: quota.remaining,
+      remainingSeconds: quota.remainingSeconds,
+      resumeUntil: quota.resumeUntil,
+      resumed: quota.resumed,
     },
     cors,
   );
@@ -122,6 +146,7 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === '/api/voice') return handleVoice(request, env);
+    if (pathname === '/api/voice/end') return handleEnd(request, env);
     if (pathname === '/health') return new Response('ok');
     return new Response('Not found', { status: 404 });
   },

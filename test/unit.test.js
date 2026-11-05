@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createKvLimiter } from '../worker/limiter.js';
-import { handleVoice } from '../worker/index.js';
+import { createCallBudget } from '../worker/limiter.js';
+import { handleVoice, handleEnd } from '../worker/index.js';
 import { runTool, tools } from '../src/lib/agent.js';
 import { median } from '../src/lib/stats.js';
 
@@ -24,23 +24,62 @@ const req = (method = 'POST', origin = ORIGIN, ip = '1.1.1.1') =>
   });
 const okFetch = async () => new Response(JSON.stringify({ value: 'ek_123', expires_at: 1 }), { status: 200 });
 
-test('límite KV: bloquea la segunda llamada y se reinicia al día siguiente', async () => {
-  let now = new Date('2026-11-05T10:00:00Z');
-  const l = createKvLimiter({ kv: fakeKv(), limit: 1, now: () => now });
-  assert.equal((await l.take('a')).allowed, true);
-  const second = await l.take('a');
-  assert.equal(second.allowed, false);
-  assert.equal(second.resetAt.toISOString(), '2026-11-06T00:00:00.000Z');
-  assert.equal((await l.take('b')).allowed, true, 'otra IP tiene su propio cupo');
-  now = new Date('2026-11-06T00:00:01Z');
-  assert.equal((await l.take('a')).allowed, true);
+function budget(clock, over = {}) {
+  return createCallBudget({ kv: fakeKv(), maxSeconds: 300, windowSeconds: 1800, maxSessions: 3, now: () => clock.t, ...over });
+}
+const T0 = Date.parse('2026-11-05T10:00:00Z');
+
+test('presupuesto: pausar y reanudar descuenta solo lo hablado (medido en servidor)', async () => {
+  const c = { t: T0 };
+  const b = budget(c);
+  const first = await b.start('a');
+  assert.equal(first.allowed, true);
+  assert.equal(first.remainingSeconds, 300);
+  assert.equal(first.resumed, false);
+  c.t += 60_000; // habló 1 min y colgó
+  await b.end('a');
+  c.t += 10 * 60_000; // 10 min en pausa no cuentan
+  const second = await b.start('a');
+  assert.equal(second.allowed, true);
+  assert.equal(second.resumed, true);
+  assert.equal(second.remainingSeconds, 240);
 });
 
-test('límite KV: refund devuelve la llamada', async () => {
-  const l = createKvLimiter({ kv: fakeKv(), limit: 1 });
-  await l.take('a');
-  await l.refund('a');
-  assert.equal((await l.take('a')).allowed, true);
+test('presupuesto: sin aviso de colgar, la siguiente llamada cobra el tiempo transcurrido', async () => {
+  const c = { t: T0 };
+  const b = budget(c);
+  await b.start('a');
+  c.t += 400_000; // cerró la pestaña de golpe y regresó: más que el total
+  const again = await b.start('a');
+  assert.equal(again.allowed, false);
+  assert.equal(again.reason, 'time_used');
+});
+
+test('presupuesto: no se puede reanudar fuera de la ventana ni más de N veces', async () => {
+  const c = { t: T0 };
+  const b = budget(c);
+  await b.start('a'); c.t += 5_000; await b.end('a');
+  c.t += 31 * 60_000;
+  assert.equal((await b.start('a')).reason, 'window_closed');
+
+  const c2 = { t: T0 };
+  const b2 = budget(c2);
+  for (let i = 0; i < 3; i++) { assert.equal((await b2.start('b')).allowed, true); c2.t += 5_000; await b2.end('b'); }
+  assert.equal((await b2.start('b')).reason, 'too_many_sessions');
+});
+
+test('presupuesto: otra IP y otro día empiezan de cero; refund deshace la apertura', async () => {
+  const c = { t: T0 };
+  const b = budget(c);
+  await b.start('a'); c.t += 400_000;
+  assert.equal((await b.start('a')).allowed, false);
+  assert.equal((await b.start('z')).allowed, true);
+  c.t = Date.parse('2026-11-06T00:00:01Z');
+  assert.equal((await b.start('a')).allowed, true);
+  const c3 = { t: T0 };
+  const b3 = budget(c3, { maxSessions: 1 });
+  await b3.start('r'); await b3.refund('r');
+  assert.equal((await b3.start('r')).allowed, true);
 });
 
 test('worker: rechaza orígenes no permitidos', async () => {
@@ -60,7 +99,7 @@ test('worker: 503 sin llave', async () => {
   assert.equal((await handleVoice(req(), env, okFetch)).status, 503);
 });
 
-test('worker: entrega token y aplica el límite diario', async () => {
+test('worker: entrega token con minutos restantes y /end cierra la sesión', async () => {
   const env = baseEnv();
   let sent;
   const spy = async (url, init) => ((sent = JSON.parse(init.body)), okFetch());
@@ -68,13 +107,26 @@ test('worker: entrega token y aplica el límite diario', async () => {
   assert.equal(first.status, 200);
   const body = await first.json();
   assert.equal(body.clientSecret, 'ek_123');
+  assert.equal(body.remainingSeconds, 300);
+  assert.equal(body.resumed, false);
   assert.equal(sent.session.tools.length, tools.length);
   assert.equal(sent.expires_after.seconds, 60);
-  assert.equal((await handleVoice(req(), env, spy)).status, 429);
+  const end = await handleEnd(new Request('https://w.example/api/voice/end', { method: 'POST', headers: { Origin: ORIGIN, 'CF-Connecting-IP': '1.1.1.1' }, body: '{}' }), env);
+  assert.equal(end.status, 204);
+  const second = await (await handleVoice(req(), env, spy)).json();
+  assert.equal(second.resumed, true);
+});
+
+test('worker: 429 cuando se acaban las partes del día', async () => {
+  const env = { ...baseEnv(), MAX_SESSIONS_PER_DAY: '1' };
+  assert.equal((await handleVoice(req(), env, okFetch)).status, 200);
+  const res = await handleVoice(req(), env, okFetch);
+  assert.equal(res.status, 429);
+  assert.equal((await res.json()).reason, 'too_many_sessions');
 });
 
 test('worker: si OpenAI falla, devuelve la llamada al cupo', async () => {
-  const env = baseEnv();
+  const env = { ...baseEnv(), MAX_SESSIONS_PER_DAY: '1' };
   const bad = async () => new Response('nope', { status: 401 });
   assert.equal((await handleVoice(req(), env, bad)).status, 502);
   assert.equal((await handleVoice(req(), env, okFetch)).status, 200);

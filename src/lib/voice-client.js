@@ -81,9 +81,14 @@ export function startVoiceApp() {
     el.querySelector('.text').textContent += delta;
     scrollDown();
   }
+  const history = []; // { role, text } para retomar el contexto al reanudar
+  let paused = null; // { remainingSeconds, resumeUntil } tras colgar con minutos disponibles
+
   function finishText(itemId, role, full) {
     const el = bubble(itemId, role);
     if (full != null) el.querySelector('.text').textContent = full.trim() || '(inaudible)';
+    const text = el.querySelector('.text').textContent.trim();
+    if (text && text !== '(inaudible)') history.push({ role, text });
     el.classList.remove('pending');
     scrollDown();
   }
@@ -284,7 +289,10 @@ export function startVoiceApp() {
         body: JSON.stringify({ turnstileToken }),
       });
       session = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(session.message || `Error ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 429) paused = null;
+        throw new Error(session.message || `Error ${res.status}`);
+      }
     } catch (err) {
       mic.getTracks().forEach((tr) => tr.stop());
       fail(err instanceof TypeError ? 'No se pudo contactar al servidor de voz. Intenta más tarde.' : err.message);
@@ -304,7 +312,8 @@ export function startVoiceApp() {
       agentSpeaking: false,
       userStoppedAt: null,
       needsFollowUp: false, // 'es' | 'en' cuando hay que pedir la respuesta tras una herramienta
-      deadline: Date.now() + session.maxCallSeconds * 1000,
+      deadline: Date.now() + (session.remainingSeconds ?? session.maxCallSeconds) * 1000,
+      resumeUntil: session.resumeUntil ? Date.parse(session.resumeUntil) : null,
       tick: 0,
     };
 
@@ -335,12 +344,31 @@ export function startVoiceApp() {
       renderMetrics();
       setStatus('live', 'Escuchando');
       setHint('Estás en línea. Pregunta lo que quieras saber de Pablo.');
-      send({
-        type: 'response.create',
-        response: {
-          instructions: `Saluda en una sola frase breve, preséntate como ${AGENT_NAME} y pregunta qué quieren saber de Pablo.`,
-        },
-      });
+      if (session.resumed && history.length) {
+        const transcript = history
+          .slice(-20)
+          .map((h) => `${h.role === 'user' ? 'Usuario' : AGENT_NAME}: ${h.text}`)
+          .join('\n');
+        send({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'system',
+            content: [{ type: 'input_text', text: `Conversación previa con este usuario (la llamada se pausó y se reanudó):\n${transcript}` }],
+          },
+        });
+        send({
+          type: 'response.create',
+          response: { instructions: 'En una frase breve, di que retoman donde se quedaron y pregunta si quiere seguir con el tema o preguntar otra cosa. Usa el idioma de la conversación previa.' },
+        });
+      } else {
+        send({
+          type: 'response.create',
+          response: {
+            instructions: `Saluda en una sola frase breve, preséntate como ${AGENT_NAME} y pregunta qué quieren saber de Pablo.`,
+          },
+        });
+      }
     };
 
     try {
@@ -361,22 +389,39 @@ export function startVoiceApp() {
 
     ui.call.disabled = false;
     ui.call.classList.add('hangup');
-    ui.callLabel.textContent = 'Colgar';
+    ui.callLabel.textContent = 'Pausar / colgar';
     ui.mute.disabled = false;
 
     const tick = () => {
       if (!call) return;
       const left = Math.max(0, Math.round((call.deadline - Date.now()) / 1000));
       ui.timer.textContent = fmtTime(left);
-      if (left === 0) hangUp('Se acabó el tiempo de la llamada. ¡Gracias por conversar!');
+      if (left === 0) hangUp('Se acabaron tus minutos de hoy. ¡Gracias por conversar!');
     };
     tick();
     call.tick = setInterval(tick, 500);
   }
 
-  function hangUp(message = 'Llamada terminada. ¡Gracias por conversar!') {
+  function hangUp(message) {
     if (!call) return;
     clearInterval(call.tick);
+    // El servidor mide el tiempo; esto solo le avisa que la sesión terminó.
+    try {
+      navigator.sendBeacon(`${document.body.dataset.voiceApi}/end`, new Blob(['{}'], { type: 'text/plain' }));
+    } catch {}
+    const left = Math.max(0, Math.round((call.deadline - Date.now()) / 1000));
+    const canResume = left >= 10 && (!call.resumeUntil || Date.now() < call.resumeUntil);
+    paused = canResume ? { remainingSeconds: left, resumeUntil: call.resumeUntil } : null;
+    if (!message) {
+      if (canResume) {
+        const until = call.resumeUntil
+          ? ` hasta las ${new Date(call.resumeUntil).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`
+          : '';
+        message = `Llamada en pausa. Te quedan ${fmtTime(left)} min; puedes reanudarla${until}.`;
+      } else {
+        message = 'Llamada terminada. ¡Gracias por conversar!';
+      }
+    }
     try {
       call.dc?.close();
     } catch {}
@@ -388,10 +433,11 @@ export function startVoiceApp() {
     remoteAnalyser = null;
     for (const el of bubbles.values()) el.classList.remove('pending');
     call = null;
-    setStatus('idle', 'Terminada');
+    setStatus('idle', paused ? 'En pausa' : 'Terminada');
     setHint(message);
     ui.call.classList.remove('hangup');
-    ui.callLabel.textContent = 'Iniciar conversación';
+    ui.callLabel.textContent = paused ? 'Reanudar conversación' : 'Iniciar conversación';
+    ui.timer.textContent = fmtTime(paused ? paused.remainingSeconds : 0);
     ui.call.disabled = false;
     ui.mute.disabled = true;
     ui.mute.setAttribute('aria-pressed', 'false');

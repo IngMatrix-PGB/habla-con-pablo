@@ -7,7 +7,7 @@ const pub = import.meta.env;
 const voiceApiUrl = pub.PUBLIC_VOICE_API_URL || 'http://localhost:8787/api/voice';
 const turnstileSiteKey = pub.PUBLIC_TURNSTILE_SITE_KEY || '';
 const maxCallSeconds = Number(pub.PUBLIC_MAX_CALL_SECONDS) || 300;
-const dailyCalls = Number(pub.PUBLIC_DAILY_CALLS_PER_IP) || 1;
+const resumeWindowMin = Number(pub.PUBLIC_RESUME_WINDOW_MIN) || 30;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 const handle = profile.contact.github.split('/').pop();
@@ -76,7 +76,7 @@ const handle = profile.contact.github.split('/').pop();
           </div>
 
           <p class="fineprint">
-            # {dailyCalls} {dailyCalls === 1 ? 'llamada' : 'llamadas'}/día · máx {Math.round(maxCallSeconds / 60)} min · la conversación no se guarda en este sitio
+            # {Math.round(maxCallSeconds / 60)} min de voz al día · pausa y reanuda durante {resumeWindowMin} min · la conversación no se guarda en este sitio
           </p>
 
           <div class="suggestions" aria-label="Ideas para preguntar">
