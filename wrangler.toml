@@ -2,6 +2,8 @@
 name = "habla-con-pablo-voice"
 main = "worker/index.js"
 compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false
 
 [vars]
 ALLOWED_ORIGINS = "https://ingmatrix-pgb.github.io,http://localhost:4321"
@@ -10,10 +12,10 @@ REALTIME_VOICE = "marin"
 DAILY_CALLS_PER_IP = "1"
 MAX_CALL_SECONDS = "300"
 
-# Crear con: npx wrangler kv namespace create RATE_LIMIT  → pegar aquí el id que devuelve.
+# Creado con: npx wrangler kv namespace create RATE_LIMIT
 [[kv_namespaces]]
 binding = "RATE_LIMIT"
-id = "REEMPLAZAR_CON_EL_ID_DE_KV"
+id = "ff707fce445b47d28519e86fd1b194bd"
 
 [observability]
 enabled = true
