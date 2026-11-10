@@ -1,5 +1,5 @@
 // Cliente de voz: WebRTC con OpenAI Realtime, transcripción, herramientas y métricas.
-import { runTool, followUpInstructions, AGENT_NAME } from './agent.js';
+import { runTool, followUpInstructions, replyLanguage, AGENT_NAME } from './agent.js';
 import { median } from './stats.js';
 import { createRobotVoice } from './robot-voice.js';
 
@@ -219,6 +219,7 @@ export function startVoiceApp() {
         break;
       case 'conversation.item.input_audio_transcription.completed':
         finishText(ev.item_id, 'user', ev.transcript);
+        call.lastUserText = ev.transcript ?? '';
         break;
       case 'output_audio_buffer.started':
         call.agentSpeaking = true;
@@ -252,7 +253,7 @@ export function startVoiceApp() {
           type: 'conversation.item.create',
           item: { type: 'function_call_output', call_id: ev.call_id, output: JSON.stringify(output) },
         });
-        call.needsFollowUp = args.lang === 'en' ? 'en' : 'es';
+        call.needsFollowUp = args; // el idioma se decide en response.done, cuando ya llegó la transcripción
         renderMetrics();
         break;
       }
@@ -260,7 +261,7 @@ export function startVoiceApp() {
         const usage = ev.response?.usage;
         if (usage) call.tokens += usage.total_tokens ?? (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
         if (call.needsFollowUp) {
-          const lang = call.needsFollowUp;
+          const lang = replyLanguage(call.needsFollowUp, call.lastUserText);
           call.needsFollowUp = false;
           send({ type: 'response.create', response: { instructions: followUpInstructions(lang) } });
         }
@@ -326,7 +327,8 @@ export function startVoiceApp() {
       tokens: 0,
       agentSpeaking: false,
       userStoppedAt: null,
-      needsFollowUp: false, // 'es' | 'en' cuando hay que pedir la respuesta tras una herramienta
+      needsFollowUp: false, // args de la última herramienta cuando hay que pedir la respuesta tras ella
+      lastUserText: '',
       deadline: Date.now() + (session.remainingSeconds ?? session.maxCallSeconds) * 1000,
       resumeUntil: session.resumeUntil ? Date.parse(session.resumeUntil) : null,
       tick: 0,

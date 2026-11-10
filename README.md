@@ -17,8 +17,8 @@ GitHub Pages (sitio estático)                 Cloudflare Worker (worker/)
              └─ canal "oai-events": transcripción, herramientas, uso de tokens
 ```
 
-- **Conocimiento**: `src/lib/profile.js` es la única fuente. El agente consulta herramientas (`get_overview`, `get_experience`, `get_skills`, `get_certifications`, `get_projects`, `get_contact`) y tiene prohibido inventar.
-- **Idioma**: cada herramienta recibe `lang` (el idioma del usuario) y la respuesta que sigue se fuerza a ese idioma. Sin esto, los datos en español hacían que contestara en español a preguntas en inglés.
+- **Conocimiento**: `src/lib/profile.js` es la única fuente. El agente consulta herramientas (`get_overview`, `get_experience`, `get_skills`, `get_certifications`, `get_projects`, `get_contact`) y tiene prohibido inventar. Para rechazar algo (salario, info interna, cambio de rol, fuera de tema) llama `decline_request`.
+- **Idioma**: cada herramienta recibe `lang`, y la respuesta que sigue se fuerza a un idioma. Ese idioma se detecta en código sobre la transcripción del usuario (`detectLanguage`), y `lang` del modelo queda de respaldo: ante un "ignore all previous instructions", el modelo marcaba `lang='es'` aunque el mensaje fuera en inglés (lo encontró el eval).
 - **Métricas en vivo**: conexión, latencia por turno y p50, interrupciones, herramientas y tokens.
 - **Control de costo**: 5 min de voz por IP al día, que se pueden pausar y reanudar (máx. 3 partes, dentro de 30 min). El tiempo lo mide el Worker, no el navegador. Además `max_output_tokens` por respuesta y token de 60 s.
 - **Reanudar**: al reanudar se le pasa al agente la transcripción previa para que siga donde se quedó.
@@ -62,7 +62,7 @@ Todo lo que empieza con `PUBLIC_` queda dentro del HTML: nunca pongas secretos a
 `evals/` mide si Matrix **contesta bien**, no solo si el código corre. Habla con el mismo modelo (`gpt-realtime`), con las mismas instrucciones, herramientas y ciclo de herramientas que la llamada real, pero en modo texto.
 
 ```bash
-npm run eval                                   # los 20 casos (usa OPENAI_API_KEY de .dev.vars)
+npm run eval                                   # los 22 casos (usa OPENAI_API_KEY de .dev.vars)
 npm run eval -- --only alucinacion-cka --runs 3  # un caso, 3 veces, para ver si es estable
 ```
 

@@ -161,3 +161,10 @@ test('todas las herramientas exigen el idioma y followUpInstructions lo fija', a
   assert.match(followUpInstructions('es'), /MUST be entirely in Spanish/);
   assert.equal(runTool('get_experience', { lang: 'en', company: 'clip' }).company, 'Clip');
 });
+
+test('get_projects sin parámetro devuelve la lista corta; con project, el detalle', () => {
+  const list = runTool('get_projects', {});
+  assert.ok(list.length > 0 && list.every((p) => p.id && p.name && !p.description));
+  assert.ok(runTool('get_projects', { project: list[0].id }).description);
+  assert.ok(runTool('get_projects', { project: 'nope' }).error);
+});

@@ -1,7 +1,7 @@
 // Conversa con Matrix por la API Realtime en modo texto: mismo modelo, instrucciones, herramientas
 // y ciclo de herramientas que la llamada de voz (src/lib/voice-client.js), sin audio.
 import { buildSession } from '../worker/index.js';
-import { AGENT_NAME, runTool, followUpInstructions } from '../src/lib/agent.js';
+import { AGENT_NAME, runTool, followUpInstructions, replyLanguage } from '../src/lib/agent.js';
 
 const MAX_TOOL_ROUNDS = 4;
 
@@ -111,12 +111,12 @@ export async function converse({ apiKey, model, turns, timeoutMs = 60_000 }) {
             args = JSON.parse(call.arguments || '{}');
           } catch {}
           const output = runTool(call.name, args);
-          toolCalls.push({ turn, name: call.name, args, output });
+          toolCalls.push({ turn, name: call.name, args, output, replyLang: replyLanguage(args, userText) });
           rt.send({
             type: 'conversation.item.create',
             item: { type: 'function_call_output', call_id: call.call_id, output: JSON.stringify(output) },
           });
-          lang = args.lang === 'en' ? 'en' : 'es';
+          lang = replyLanguage(args, userText);
         }
         res = await respond({ instructions: followUpInstructions(lang) });
       }

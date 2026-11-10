@@ -20,13 +20,13 @@ export function deterministicChecks(c, result) {
     });
   }
 
-  // Cada tool exige `lang`; si el modelo lo pone mal, la respuesta siguiente sale en el idioma equivocado.
-  const wrongLang = result.toolCalls.filter((t) => t.turn === result.turns - 1 && t.args.lang !== c.lang);
+  // El idioma tras la tool (detectado en el texto del usuario, o lang del modelo) fija el de la respuesta siguiente.
+  const wrongLang = result.toolCalls.filter((t) => t.turn === result.turns - 1 && t.replyLang !== c.lang);
   if (wrongLang.length) {
     checks.push({
       name: 'tool_lang',
       pass: false,
-      detail: `lang=${wrongLang.map((t) => t.args.lang).join(',')} en la última pregunta, se esperaba ${c.lang}`,
+      detail: `idioma=${wrongLang.map((t) => t.replyLang).join(',')} en la última pregunta, se esperaba ${c.lang}`,
     });
   }
 

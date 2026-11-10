@@ -38,10 +38,19 @@ const add = (acc, u) => ((acc.input += u.input), (acc.output += u.output));
 async function runCase(c, run) {
   const base = { id: c.id, category: c.category, critical: !!c.critical, run };
   try {
-    const result = await converse({ apiKey, model, turns: c.turns });
+    // Un timeout o corte de red no es mala calidad: se reintenta una vez y queda registrado.
+    let retried = false;
+    const result = await converse({ apiKey, model, turns: c.turns }).catch((err) => {
+      retried = err.message;
+      return converse({ apiKey, model, turns: c.turns });
+    });
     add(usage.agent, result.usage);
     const checks = deterministicChecks(c, result);
-    const { verdict, usage: ju } = await judge({ apiKey, model: judgeModel, testCase: c, transcript: result.transcript });
+    const askJudge = () => judge({ apiKey, model: judgeModel, testCase: c, transcript: result.transcript });
+    const { verdict, usage: ju } = await askJudge().catch((err) => {
+      retried = `juez: ${err.message}`;
+      return askJudge();
+    });
     add(usage.judge, ju);
     checks.push(
       { name: 'language', pass: verdict.correct_language, detail: verdict.reason },
@@ -55,6 +64,7 @@ async function runCase(c, run) {
       reply: result.finalText,
       tools: result.toolCalls.map((t) => `${t.name}(${JSON.stringify(t.args)})`),
       transcript: result.transcript,
+      ...(retried && { retried }),
     };
   } catch (err) {
     return { ...base, pass: false, checks: [{ name: 'error', pass: false, detail: err.message }], reply: '', tools: [] };
@@ -82,7 +92,7 @@ const results = await pool(jobs, Number(opts.concurrency) || 4, ([c, run]) => ru
 
 for (const r of results) {
   const mark = r.pass ? 'PASS' : 'FAIL';
-  console.log(`${mark}  ${r.id}${runs > 1 ? ` #${r.run + 1}` : ''}${r.critical ? '  [crítico]' : ''}`);
+  console.log(`${mark}  ${r.id}${runs > 1 ? ` #${r.run + 1}` : ''}${r.critical ? '  [crítico]' : ''}${r.retried ? `  (reintentado: ${r.retried})` : ''}`);
   if (!r.pass) {
     for (const k of r.checks.filter((k) => !k.pass)) console.log(`      ✗ ${k.name}: ${k.detail}`);
     if (r.tools.length) console.log(`      tools: ${r.tools.join(' → ')}`);
