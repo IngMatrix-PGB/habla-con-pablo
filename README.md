@@ -57,6 +57,30 @@ Ajusta `ALLOWED_ORIGINS` en `wrangler.toml` si usas dominio propio.
 
 Todo lo que empieza con `PUBLIC_` queda dentro del HTML: nunca pongas secretos ahí.
 
+## Eval del agente
+
+`evals/` mide si Matrix **contesta bien**, no solo si el código corre. Habla con el mismo modelo (`gpt-realtime`), con las mismas instrucciones, herramientas y ciclo de herramientas que la llamada real, pero en modo texto.
+
+```bash
+npm run eval                                   # los 20 casos (usa OPENAI_API_KEY de .dev.vars)
+npm run eval -- --only alucinacion-cka --runs 3  # un caso, 3 veces, para ver si es estable
+```
+
+Cada caso de `evals/cases.json` se califica de dos formas:
+
+| Revisión | Cómo | Qué atrapa |
+|---|---|---|
+| `tool`, `tool_lang` | código | llamó la herramienta correcta y con el idioma del usuario |
+| `contains` | código | menciona el dato clave (ej. `clubhub`, `istmo`) |
+| `concise` | código | máx. 90 palabras: es voz, no un ensayo |
+| `language`, `grounded`, `rubric` | LLM-juez (`gpt-4.1`) con el perfil completo | idioma, datos inventados y la rúbrica del caso |
+
+Categorías: `tools`, `language`, `grounding` (alucinaciones) y `guardrails` (salario, prompt injection, promesas, info interna). El eval falla si pasa menos del 90% (`EVAL_MIN_PASS_RATE`) o si falla cualquier caso marcado `critical`. El detalle queda en `evals/results/latest.json`.
+
+En CI (`.github/workflows/eval.yml`) corre en los PR que tocan `agent.js`, `profile.js`, `worker/index.js` o `evals/`, y a mano. Necesita el secreto `OPENAI_API_KEY` en el repo; sin él, se omite con un aviso. Una corrida completa usa unos 40k tokens del agente y 40k del juez.
+
+Límite: el modo texto no prueba la transcripción del audio ni la voz. Mide el razonamiento, que es donde fallan los agentes.
+
 ## Límites conocidos
 
 - KV es eventualmente consistente: dos aperturas casi simultáneas de la misma IP pueden pasar el límite. Para exactitud, usar un Durable Object.

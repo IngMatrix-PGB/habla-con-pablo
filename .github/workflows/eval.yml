@@ -1,0 +1,47 @@
+name: Eval de Matrix
+
+# Corre el eval contra el modelo real cuando cambia algo que afecta las respuestas del agente.
+# Cuesta tokens: no corre en cada push, solo en estos archivos o a mano.
+on:
+  pull_request:
+    paths:
+      - 'src/lib/agent.js'
+      - 'src/lib/profile.js'
+      - 'worker/index.js'
+      - 'evals/**'
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: 'Corridas por caso (más corridas = más confianza y más costo)'
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      EVAL_RUNS: ${{ inputs.runs || '1' }}
+    steps:
+      - name: Sin llave no hay eval
+        if: env.OPENAI_API_KEY == ''
+        run: echo "::warning::Falta el secreto OPENAI_API_KEY del repo; se omite el eval."
+      - uses: actions/checkout@v7
+        if: env.OPENAI_API_KEY != ''
+      - uses: actions/setup-node@v7
+        if: env.OPENAI_API_KEY != ''
+        with:
+          node-version: 22
+          cache: npm
+      - if: env.OPENAI_API_KEY != ''
+        run: npm ci
+      - if: env.OPENAI_API_KEY != ''
+        run: npm run eval
+      - uses: actions/upload-artifact@v7
+        if: always() && env.OPENAI_API_KEY != ''
+        with:
+          name: eval-results
+          path: evals/results/latest.json
