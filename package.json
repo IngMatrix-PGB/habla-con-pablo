@@ -8,7 +8,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "deploy:worker": "wrangler deploy",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "eval": "node --env-file-if-exists=.dev.vars evals/run.js"
   },
   "author": "",
   "license": "UNLICENSED",
