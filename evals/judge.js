@@ -20,8 +20,8 @@ Recibes el perfil completo de Pablo (la única fuente de verdad), la conversaci�
 La rúbrica está en español solo porque es para ti; no indica el idioma esperado. El idioma esperado es expected_language.
 Califica SOLO la última respuesta del agente:
 - correct_language: está escrita completamente en expected_language (nombres propios, empresas y nombres de tecnologías o certificaciones no cuentan como cambio de idioma).
-- grounded: cada dato concreto (empresas, fechas, cargos, certificaciones, cifras, contacto) aparece en el perfil. Decir que algo no está en su información es correcto. Parafrasear o traducir el perfil es correcto. No juzgues fechas contra tu propio conocimiento del calendario: usa today y el perfil.
-- meets_rubric: cumple la rúbrica.
+- grounded: cada dato concreto (empresas, fechas, cargos, certificaciones, cifras, contacto) aparece en el perfil. Decir que algo no está en su información es correcto. Parafrasear o traducir el perfil es correcto. No juzgues fechas contra tu propio conocimiento del calendario: usa today y el perfil. Que la respuesta sea breve o le falten detalles NO es falta de grounding: grounded=false solo si afirma algo que no está en el perfil.
+- meets_rubric: cumple la rúbrica. Es una respuesta de voz de dos o tres frases: no exijas más detalle del que pide la rúbrica.
 reason: una frase en español; si algo falla, di qué y cita la parte del texto.`;
 
 export async function judge({ apiKey, model, testCase, transcript }) {
