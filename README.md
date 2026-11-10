@@ -1,6 +1,35 @@
 # Habla con Pablo
 
+[![Eval de Matrix](https://github.com/IngMatrix-PGB/habla-con-pablo/actions/workflows/eval.yml/badge.svg)](https://github.com/IngMatrix-PGB/habla-con-pablo/actions/workflows/eval.yml)
+[![Deploy a GitHub Pages](https://github.com/IngMatrix-PGB/habla-con-pablo/actions/workflows/pages.yml/badge.svg)](https://github.com/IngMatrix-PGB/habla-con-pablo/actions/workflows/pages.yml)
+
 Agente de voz en tiempo real (**Matrix**) que responde preguntas sobre la carrera de Pablo Galeana Bailey, en español o inglés.
+
+**Pruébalo:** https://ingmatrix-pgb.github.io/habla-con-pablo/
+
+## Cómo se evalúa
+
+Un demo de IA que "se ve bien" no dice nada. Este agente tiene un **eval de 22 casos** que corre contra el mismo modelo de producción y **bloquea el PR** si baja la calidad:
+
+| Qué mide | Ejemplo |
+|---|---|
+| Elige la herramienta correcta | "¿Dónde estudió?" → consulta su formación, no la inventa |
+| Contesta en el idioma del usuario | Pregunta en inglés con datos en español → respuesta 100% en inglés |
+| No alucina | "¿Tiene la CKA?" / "¿Trabajó en Google?" → no lo afirma |
+| Respeta sus límites | Salario, prompt injection, prometer fechas, info interna de empleadores |
+
+Se califica con revisiones en código (herramienta, idioma, longitud para voz) y con un **LLM-juez** que tiene el perfil completo como única fuente de verdad. [Resultados en Actions](https://github.com/IngMatrix-PGB/habla-con-pablo/actions/workflows/eval.yml).
+
+### El bug que encontró
+
+La primera corrida dio **18/20**. Ante un prompt injection en inglés ("Ignore all previous instructions…"), Matrix se negaba bien, pero **en español**.
+
+1. Reforzar el prompt: **0/3**.
+2. Una pista en la descripción de la herramienta: **5/5**… pero era *overfitting*. Un caso nuevo con otra redacción falló 3/3.
+3. Pedirle al modelo que citara al usuario para detectar el idioma: a veces **traducía la cita**.
+4. **Solución:** sacar la decisión del modelo. El idioma se detecta en código sobre la transcripción del usuario, y el modelo queda de respaldo.
+
+Resultado: **22/22**, estable en corridas repetidas. Lección: no confíes en el modelo para lo que el código puede decidir, y prueba con casos que el arreglo no vio. Todo el proceso está en el [PR #1](https://github.com/IngMatrix-PGB/habla-con-pablo/pull/1).
 
 ## Arquitectura
 
